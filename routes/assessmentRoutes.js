@@ -1,26 +1,83 @@
-// server/routes/assessmentRoutes.js
-const express = require('express'); // 🔴 MUST BE HERE
-const router = express.Router();    // 🔴 MUST BE HERE
+const express = require('express'); 
+const router = express.Router();    
+const axios = require('axios'); 
 
 const Assessment = require('../models/Assessment');
 const verifyToken = require('../middleware/authMiddleware');
 
-// 1. SAVE NEW ASSESSMENT (Protected Route)
 router.post('/save', verifyToken, async (req, res) => {
   try {
-    const { responses, recommendation, suggested_skills } = req.body;
-    
+    const { responses, formattedQuestions } = req.body;
+
+    if (!responses) {
+      return res.status(400).json({ error: "No answers found in request body." });
+    }
+
+    // Ensure the system key is configured on Render
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.error("Missing process.env.OPENAI_API_KEY configuration on backend platform.");
+      return res.status(500).json({ error: "Server AI configuration error." });
+    }
+
+    // Fallback compilation if formattedQuestions wasn't provided directly by the frontend request
+    const aiPromptInput = formattedQuestions 
+      ? JSON.stringify(formattedQuestions) 
+      : JSON.stringify(responses);
+
+    // Securely call OpenAI from Node.js (Bypasses browser CORS restrictions cleanly)
+    const openAIResponse = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        response_format: { type: 'json_object' },
+        messages: [
+          { 
+            role: 'system', 
+            content: 'You are a professional career guidance engine. Given a user\'s metrics layout questionnaire response structure, output ONLY a valid JSON object matching this exact format: {"recommended_field": string, "confidence": "Low"|"Medium"|"High", "reasoning": string, "suggested_skills": string[]}.' 
+          },
+          { 
+            role: 'user', 
+            content: `Analyze these questionnaire metric records carefully: ${aiPromptInput}` 
+          }
+        ]
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        }
+      }
+    );
+
+    // Extract content payload from the choice index anchor point
+    const rawContent = openAIResponse.data.choices[0].message.content;
+    const aiResult = JSON.parse(rawContent);
+
+    // Convert string confidence to numeric score metric value for database schema mapping consistency
+    const confidenceScoreMap = { "High": 92, "Medium": 74, "Low": 48 };
+    const mappedScore = confidenceScoreMap[aiResult.confidence] || 80;
+
+    // Construct unified dynamic document record layout matching your validation schema fields
     const newAssessment = new Assessment({
       userId: req.user.id,
-      responses,
-      recommendation,
-      suggested_skills: suggested_skills || [] 
+      responses: responses,
+      recommendation: {
+        primaryField: aiResult.recommended_field || "General Field",
+        confidenceScore: mappedScore,
+        analysisDate: new Date(),
+        reasoning: aiResult.reasoning || "Analysis complete based on profile indicators."
+      },
+      suggested_skills: aiResult.suggested_skills || []
     });
 
     const savedAssessment = await newAssessment.save();
     res.status(201).json(savedAssessment);
+
   } catch (err) {
-    res.status(500).json({ error: "Failed to save assessment" });
+    console.error("OpenAI processing or DB entry crash tracking logs:", err.message);
+    res.status(500).json({ error: "Failed to process profile evaluation structure gracefully." });
   }
 });
 
@@ -33,9 +90,10 @@ router.get('/history', verifyToken, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch history" });
   }
 });
+
+// 3. DELETE SINGLE RECORD ENTRY (Protected Route)
 router.delete('/delete/:id', verifyToken, async (req, res) => {
   try {
-    // Find the assessment by ID and ensure it belongs to the logged-in user
     const assessment = await Assessment.findOne({ _id: req.params.id, userId: req.user.id });
     
     if (!assessment) {
