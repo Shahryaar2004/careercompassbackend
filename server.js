@@ -13,7 +13,8 @@ const allowedOrigins = [
   'https://careercompassfront-3981.vercel.app',
   "'https://careercompassfront-lc3s.vercel.app'",
   "https://careercompassfront.vercel.app",
-  "https://careercompassfront-5826.vercel.app"
+  "https://careercompassfront-5826.vercel.app",
+  "https://careercompassfront-lc3s.vercel.app"
 
 ];
 
