@@ -7,36 +7,29 @@ const verifyToken = require('../middleware/authMiddleware');
 
 // server/routes/assessmentRoutes.js
 
+// server/routes/assessmentRoutes.js
+
 router.post('/save', verifyToken, async (req, res) => {
   try {
-    // 🔴 DIAGNOSTIC LOGS: Let's see what is arriving in your Render logs
-    console.log("--- NEW SAVE REQUEST ARRIVED ---");
-    console.log("Logged In User Data:", req.user);
-    console.log("Incoming Request Body Payload:", req.body);
-
     const { responses, formattedQuestions } = req.body;
 
     if (!responses) {
-      console.log("❌ CRITICAL: 'responses' was missing or empty in req.body!");
       return res.status(400).json({ error: "No answers found in request body." });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      console.error("❌ CRITICAL: process.env.OPENAI_API_KEY is completely missing on Render!");
-      return res.status(500).json({ error: "Server AI configuration error." });
-    }
+    // 🔴 HARDCODED KEY: Paste your active OpenAI key directly here on the backend 
+    const apiKey = "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";
+    const apiModel = "gpt-4o-mini";
 
     const aiPromptInput = formattedQuestions 
       ? JSON.stringify(formattedQuestions) 
       : JSON.stringify(responses);
 
-    console.log("Sending payload array data to OpenAI Engine...");
-
+    // Call OpenAI directly from Node.js
     const openAIResponse = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
-        model: 'gpt-4o-mini',
+        model: apiModel,
         temperature: 0.3,
         response_format: { type: 'json_object' },
         messages: [
@@ -56,15 +49,13 @@ router.post('/save', verifyToken, async (req, res) => {
     );
 
     const rawContent = openAIResponse.data.choices[0].message.content;
-    console.log("Raw Response back from OpenAI:", rawContent);
-
     const aiResult = JSON.parse(rawContent);
 
     const confidenceScoreMap = { "High": 92, "Medium": 74, "Low": 48 };
     const mappedScore = confidenceScoreMap[aiResult.confidence] || 80;
 
     const newAssessment = new Assessment({
-      userId: req.user.id, // Ensure your schema uses userId matching this!
+      userId: req.user.id, 
       responses: responses,
       recommendation: {
         primaryField: aiResult.recommended_field || "General Field",
@@ -76,12 +67,10 @@ router.post('/save', verifyToken, async (req, res) => {
     });
 
     const savedAssessment = await newAssessment.save();
-    console.log("✅ SUCCESS: Saved assessment cleanly to MongoDB Cluster!");
     res.status(201).json(savedAssessment);
 
   } catch (err) {
-    // 🔴 CHANGED: Force this to return 400 with the exact error description string
-    console.error("❌ ROUTE CRASHED LOG ENTRY:", err.message);
+    console.error("Backend error details:", err.message);
     res.status(400).json({ 
       error: "Failed to process profile evaluation structure gracefully.",
       details: err.message 
