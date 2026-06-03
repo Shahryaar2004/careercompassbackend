@@ -5,27 +5,34 @@ const axios = require('axios');
 const Assessment = require('../models/Assessment');
 const verifyToken = require('../middleware/authMiddleware');
 
+// server/routes/assessmentRoutes.js
+
 router.post('/save', verifyToken, async (req, res) => {
   try {
+    // 🔴 DIAGNOSTIC LOGS: Let's see what is arriving in your Render logs
+    console.log("--- NEW SAVE REQUEST ARRIVED ---");
+    console.log("Logged In User Data:", req.user);
+    console.log("Incoming Request Body Payload:", req.body);
+
     const { responses, formattedQuestions } = req.body;
 
     if (!responses) {
+      console.log("❌ CRITICAL: 'responses' was missing or empty in req.body!");
       return res.status(400).json({ error: "No answers found in request body." });
     }
 
-    // Ensure the system key is configured on Render
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.error("Missing process.env.OPENAI_API_KEY configuration on backend platform.");
+      console.error("❌ CRITICAL: process.env.OPENAI_API_KEY is completely missing on Render!");
       return res.status(500).json({ error: "Server AI configuration error." });
     }
 
-    // Fallback compilation if formattedQuestions wasn't provided directly by the frontend request
     const aiPromptInput = formattedQuestions 
       ? JSON.stringify(formattedQuestions) 
       : JSON.stringify(responses);
 
-    // Securely call OpenAI from Node.js (Bypasses browser CORS restrictions cleanly)
+    console.log("Sending payload array data to OpenAI Engine...");
+
     const openAIResponse = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
@@ -35,12 +42,9 @@ router.post('/save', verifyToken, async (req, res) => {
         messages: [
           { 
             role: 'system', 
-            content: 'You are a professional career guidance engine. Given a user\'s metrics layout questionnaire response structure, output ONLY a valid JSON object matching this exact format: {"recommended_field": string, "confidence": "Low"|"Medium"|"High", "reasoning": string, "suggested_skills": string[]}.' 
+            content: 'You are a professional career guidance engine. Output ONLY a valid JSON object matching this exact format: {"recommended_field": string, "confidence": "Low"|"Medium"|"High", "reasoning": string, "suggested_skills": string[]}.' 
           },
-          { 
-            role: 'user', 
-            content: `Analyze these questionnaire metric records carefully: ${aiPromptInput}` 
-          }
+          { role: 'user', content: `Analyze these questionnaire metrics: ${aiPromptInput}` }
         ]
       },
       {
@@ -51,36 +55,39 @@ router.post('/save', verifyToken, async (req, res) => {
       }
     );
 
-    // Extract content payload from the choice index anchor point
     const rawContent = openAIResponse.data.choices[0].message.content;
+    console.log("Raw Response back from OpenAI:", rawContent);
+
     const aiResult = JSON.parse(rawContent);
 
-    // Convert string confidence to numeric score metric value for database schema mapping consistency
     const confidenceScoreMap = { "High": 92, "Medium": 74, "Low": 48 };
     const mappedScore = confidenceScoreMap[aiResult.confidence] || 80;
 
-    // Construct unified dynamic document record layout matching your validation schema fields
     const newAssessment = new Assessment({
-      userId: req.user.id,
+      userId: req.user.id, // Ensure your schema uses userId matching this!
       responses: responses,
       recommendation: {
         primaryField: aiResult.recommended_field || "General Field",
         confidenceScore: mappedScore,
         analysisDate: new Date(),
-        reasoning: aiResult.reasoning || "Analysis complete based on profile indicators."
+        reasoning: aiResult.reasoning || "Analysis complete."
       },
       suggested_skills: aiResult.suggested_skills || []
     });
 
     const savedAssessment = await newAssessment.save();
+    console.log("✅ SUCCESS: Saved assessment cleanly to MongoDB Cluster!");
     res.status(201).json(savedAssessment);
 
   } catch (err) {
-    console.error("OpenAI processing or DB entry crash tracking logs:", err.message);
-    res.status(500).json({ error: "Failed to process profile evaluation structure gracefully." });
+    // 🔴 CHANGED: Force this to return 400 with the exact error description string
+    console.error("❌ ROUTE CRASHED LOG ENTRY:", err.message);
+    res.status(400).json({ 
+      error: "Failed to process profile evaluation structure gracefully.",
+      details: err.message 
+    });
   }
 });
-
 // 2. GET USER'S HISTORY (Protected Route)
 router.get('/history', verifyToken, async (req, res) => {
   try {
