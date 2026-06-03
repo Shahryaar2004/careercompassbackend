@@ -132,9 +132,9 @@ router.post('/save', verifyToken, async (req, res) => {
       ? JSON.stringify(formattedQuestions) 
       : JSON.stringify(responses);
 
-    // ✅ FIXED ENDPOINT: Uses standard production parameters compatible across all API access keys
+    // ✅ FIXED ENDPOINT: Targeting the active, free gemini-2.5-flash model via stable v1 path
     const geminiResponse = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         contents: [{
           parts: [{
@@ -145,7 +145,6 @@ router.post('/save', verifyToken, async (req, res) => {
       { headers: { 'Content-Type': 'application/json' } }
     );
 
-    // Guard rail to intercept empty api callbacks safely
     if (!geminiResponse.data || !geminiResponse.data.candidates) {
       throw new Error("Invalid payload signature returned from upstream Gemini API.");
     }
