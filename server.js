@@ -10,8 +10,7 @@ const app = express();
 
 const allowedOrigins = [
   'http://localhost:5173', 
-  'https://careercompassfront-3981.vercel.app',
-  "'https://careercompassfront-lc3s.vercel.app'",
+  "https://careercompassfront-3981.vercel.app",
   "https://careercompassfront.vercel.app"
 ];
 
